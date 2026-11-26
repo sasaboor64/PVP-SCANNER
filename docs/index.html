@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PvP Scanner</title>
+<meta name="description" content="Find Solana tokens that share a ticker, name or narrative with a given mint.">
+<style>
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #dde1e7;
+  --text: #15181d;
+  --muted: #5e6672;
+  --accent: #5b4fe0;
+  --accent-text: #ffffff;
+  --good: #1a7f4b;
+  --warn: #a86400;
+  --bad: #c0362c;
+  --chip: #eceaff;
+  --chip-text: #3d33b0;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+  --radius: 10px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --surface-2: #1f232c;
+    --border: #2c313c;
+    --text: #e8eaee;
+    --muted: #9aa2b0;
+    --accent: #8b81ff;
+    --accent-text: #0f1115;
+    --good: #4cc78a;
+    --warn: #e0a64a;
+    --bad: #f07167;
+    --chip: #2a2650;
+    --chip-text: #c9c3ff;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #171a21;
+  --surface-2: #1f232c;
+  --border: #2c313c;
+  --text: #e8eaee;
+  --muted: #9aa2b0;
+  --accent: #8b81ff;
+  --accent-text: #0f1115;
+  --good: #4cc78a;
+  --warn: #e0a64a;
+  --bad: #f07167;
+  --chip: #2a2650;
+  --chip-text: #c9c3ff;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
+
+header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 20px 0 12px; flex-wrap: wrap;
+}
+header h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+header h1 span { color: var(--muted); font-weight: 400; }
+.conn { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--good); }
+.dot.err { background: var(--bad); }
+.conn input { width: 220px; }
+
+nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; }
+nav.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
+  padding: 10px 14px; font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+input[type=text] {
+  font: inherit; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; min-width: 0;
+}
+input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input.mono { font-family: var(--mono); font-size: 14px; }
+button.primary, button.secondary {
+  font: inherit; font-weight: 600; border-radius: 8px; padding: 9px 16px; cursor: pointer; white-space: nowrap;
+}
+button.primary { background: var(--accent); color: var(--accent-text); border: 1px solid var(--accent); }
+button.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+button.small { font-size: 13px; padding: 5px 10px; font-weight: 500; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row > input { flex: 1 1 320px; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px; margin-top: 16px;
+}
+.card h2 { font-size: 16px; margin: 0 0 4px; }
+.section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 0; font-weight: 600; }
+.token-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.token-name { font-size: 18px; font-weight: 650; }
+.token-name .sym { color: var(--muted); font-weight: 500; margin-left: 6px; }
+.ca { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; color: var(--muted); }
+.ca code { word-break: break-all; min-width: 0; }
+.ca button { white-space: nowrap; flex: none; }
+.stats { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; }
+.stat .k { font-size: 12px; color: var(--muted); }
+.stat .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.desc { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.quote { margin: 10px 0 0; padding: 8px 12px; border-left: 3px solid var(--border); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.links { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 14px; }
+
+.match { display: grid; grid-template-columns: 56px 1fr; gap: 14px; }
+.score {
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-variant-numeric: tabular-nums;
+  background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--surface-2) 0);
+  position: relative;
+}
+.score::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
+.score span { position: relative; font-size: 15px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { background: var(--chip); color: var(--chip-text); border-radius: 999px; padding: 2px 10px; font-size: 13px; overflow-wrap: anywhere; }
+.chip b { font-weight: 600; }
+
+.status { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: var(--muted); }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error { border-color: var(--bad); }
+.error h2 { color: var(--bad); }
+.muted { color: var(--muted); }
+.disclaimer { font-size: 13px; color: var(--muted); margin-top: 16px; }
+
+.verdict { font-weight: 650; }
+.verdict.yes { color: var(--warn); }
+.verdict.no { color: var(--good); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pair .card { margin-top: 0; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+td.ca-cell { word-break: break-all; }
+.empty { color: var(--muted); padding: 20px 0; text-align: center; }
+
+.setup { font-size: 14px; }
+.setup pre { background: var(--surface-2); padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+
+@media (max-width: 640px) {
+  .pair { grid-template-columns: 1fr; }
+  .conn { width: 100%; flex-wrap: nowrap; }
+  .conn input { flex: 1; width: auto; }
+  th.hide-sm, td.hide-sm { display: none; }
+}
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>PvP Scanner <span>· Solana narrative overlap</span></h1>
+    <div class="conn">
+      <span class="dot" id="apiDot" title="API status"></span>
+      <label for="apiBase" class="muted" style="font-size:13px">API</label>
+      <input type="text" id="apiBase" class="mono" spellcheck="false" autocomplete="off">
+      <button class="secondary small" id="apiCheck">Check</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="scan" aria-selected="true">Scan</button>
+    <button role="tab" data-tab="compare" aria-selected="false">Compare</button>
+    <button role="tab" data-tab="recent" aria-selected="false">Recent</button>
+  </nav>
+
+  <div class="card setup" id="setupHelp" hidden>
+    <h2>Can't reach the API</h2>
+    <p class="muted" style="margin-top:0">This page is static. It talks to the scanner backend you run yourself. Start it, then press <b>Check</b>:</p>
+<pre>cd backend
+python -m pip install -r requirements.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
+    <p class="muted" style="margin-bottom:0">If your browser asks whether this site may access devices on your local network, allow it. Safari blocks calls from an https page to a local http server; use Chrome, Edge or Firefox, or open this file locally.</p>
+  </div>
+
+  <!-- Scan -->
+  <section id="tab-scan" role="tabpanel">
+    <form id="scanForm" class="row" autocomplete="off">
+      <input type="text" id="scanMint" class="mono" placeholder="Solana token mint address" spellcheck="false" aria-label="Mint address">
+      <button class="primary" id="scanBtn" type="submit">Scan</button>
+      <button class="secondary" id="scanCancel" type="button" hidden>Cancel</button>
+    </form>
+    <p class="hint">Searches live DexScreener results for tokens with the same ticker, a similar name, shared links or overlapping narrative. A scan can take a minute.</p>
+    <div id="scanOut"></div>
+  </section>
+
+  <!-- Compare -->
+  <section id="tab-compare" role="tabpanel" hidden>
+    <form id="cmpForm" autocomplete="off">
+      <div class="row">
+        <input type="text" id="cmpA" class="mono" placeholder="Token A mint address" spellcheck="false" aria-label="Token A">
+        <input type="text" id="cmpB" class="mono" placeholder="Token B mint address" spellcheck="false" aria-label="Token B">
+        <button class="primary" id="cmpBtn" type="submit">Compare</button>
+      </div>
+    </form>
+    <p class="hint">Direct check of two tokens: ticker, name, description and shared social links.</p>
+    <div id="cmpOut"></div>
+  </section>
+
+  <!-- Recent -->
+  <section id="tab-recent" role="tabpanel" hidden>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span class="muted">Tokens scanned by this backend, newest first.</span>
+      <button class="secondary small" id="recentRefresh">Refresh</button>
+    </div>
+    <div id="recentOut"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const CA_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  const DEFAULT_API = 'http://127.0.0.1:8000';
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- storage (best effort) ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+
+  // ---------- DOM helpers: all token data is untrusted, so only textContent is used ----------
+  function el(tag, attrs, ...children) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') n.className = v;
+      else if (k === 'style') n.style.cssText = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    for (const c of children.flat()) {
+      if (c == null || c === false) continue;
+      n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    }
+    return n;
+  }
+  function safeUrl(u) {
+    if (typeof u !== 'string') return null;
+    try {
+      const p = new URL(u);
+      return (p.protocol === 'https:' || p.protocol === 'http:') ? p.href : null;
+    } catch { return null; }
+  }
+  function extLink(url, label) {
+    const href = safeUrl(url);
+    return href ? el('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, label) : null;
+  }
+  function usd(v) {
+    const n = Number(v);
+    if (v == null || !isFinite(n)) return null;
+    if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
+    return '$' + n.toFixed(0);
+  }
+  function short(ca) { return ca && ca.length > 12 ? ca.slice(0, 6) + '…' + ca.slice(-6) : (ca || ''); }
+  function copyBtn(text) {
+    const b = el('button', { class: 'link', type: 'button', style: 'font-size:13px' }, 'Copy');
+    b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+      catch { b.textContent = 'Copy failed'; }
+      setTimeout(() => (b.textContent = 'Copy'), 1400);
+    });
+    return b;
+  }
+
+  // ---------- API ----------
+  const apiInput = $('apiBase');
+  apiInput.value = store.get('pvp.api') || DEFAULT_API;
+  const apiBase = () => apiInput.value.trim().replace(/\/+$/, '') || DEFAULT_API;
+
+  async function api(path, opts = {}) {
+    let res;
+    try {
+      res = await fetch(apiBase() + path, {
+        ...opts,
+        headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      setConn(false);
+      throw new Error('Could not reach the API at ' + apiBase() + '. Is the backend running?');
+    }
+    setConn(true);
+    let data = null;
+    try { data = await res.json(); } catch {}
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      if (data && typeof data.detail === 'string') msg = data.detail;
+      else if (data && Array.isArray(data.detail)) msg = data.detail.map(d => d.msg).join('; ');
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function setConn(ok) {
+    $('apiDot').className = 'dot ' + (ok ? 'ok' : 'err');
+    $('apiDot').title = ok ? 'API reachable' : 'API unreachable';
+    $('setupHelp').hidden = ok;
+  }
+  async function checkHealth() {
+    store.set('pvp.api', apiBase());
+    try { await api('/health'); } catch {}
+  }
+  $('apiCheck').addEventListener('click', checkHealth);
+  apiInput.addEventListener('change', checkHealth);
+
+  // ---------- rendering ----------
+  function tokenCard(t, opts = {}) {
+    const stats = [];
+    const mc = usd(t.market_cap), liq = usd(t.liquidity);
+    if (mc) stats.push(el('div', { class: 'stat' }, el('div', { class: 'k' }, 'Market cap / FDV'), el('div', { class: 'v' }, mc)));
+    if (liq) stats.push(el('div', { class: 'stat' }, el('div', { class: 'k' }, 'Liquidity'), el('div', { class: 'v' }, liq)));
+
+    const links = [];
+    const chart = extLink(t.pair_url, 'Chart');
+    if (chart) links.push(chart);
+    for (const [label, url] of Object.entries(t.socials || {})) {
+      const a = extLink(url, label);
+      if (a) links.push(a);
+    }
+
+    const actions = [];
+    if (opts.scanLink && t.ca) {
+      actions.push(el('button', { class: 'link', type: 'button', style: 'font-size:13px', onclick: () => startScan(t.ca) }, 'Scan this'));
+    }
+
+    return el('div', { class: 'card' + (opts.flat ? '' : '') },
+      el('div', { class: 'token-head' },
+        el('div', { class: 'token-name' }, t.name || 'Unknown token', el('span', { class: 'sym' }, '$' + (t.symbol || '?'))),
+        opts.badge || null),
+      el('div', { class: 'ca' }, el('code', {}, t.ca || ''), t.ca ? copyBtn(t.ca) : null, ...actions),
+      stats.length ? el('div', { class: 'stats' }, stats) : null,
+      t.description ? el('p', { class: 'desc' }, clip(t.description, opts.descLen || 600)) : null,
+      t.narrative_text ? el('div', { class: 'quote' }, el('b', {}, 'Linked X post: '), clip(t.narrative_text, 400)) : null,
+      links.length ? el('div', { class: 'links' }, links) : null,
+      opts.extra || null,
+    );
+  }
+  function clip(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
+
+  function scoreRing(v) {
+    const p = Math.max(0, Math.min(100, Number(v) || 0));
+    const c = p >= 60 ? 'var(--bad)' : p >= 30 ? 'var(--warn)' : 'var(--muted)';
+    return el('div', { class: 'score', style: `--p:${p};--c:${c}`, title: 'Narrative fit, 0–100' }, el('span', {}, String(Math.round(p))));
+  }
+  function evidenceChips(list) {
+    return el('div', { class: 'chips' }, (list || []).map(e => {
+      const parts = [el('b', {}, e.label)];
+      if (e.score > 0) parts.push(' ' + Math.round(e.score * 100) + '%');
+      if (e.detail) parts.push(' — ' + clip(e.detail, 140));
+      return el('span', { class: 'chip' }, parts);
+    }));
+  }
+
+  function errorCard(msg) {
+    return el('div', { class: 'card error' }, el('h2', {}, 'Request failed'), el('div', {}, msg));
+  }
+  function loading(label) {
+    const t0 = Date.now();
+    const time = el('span', {}, '0s');
+    const node = el('div', { class: 'status' }, el('div', { class: 'spinner' }), el('span', {}, label), time);
+    const iv = setInterval(() => (time.textContent = Math.round((Date.now() - t0) / 1000) + 's'), 1000);
+    return { node, stop: () => clearInterval(iv) };
+  }
+
+  // ---------- scan ----------
+  let scanCtl = null;
+  async function startScan(mint) {
+    mint = (mint || '').trim();
+    selectTab('scan', false);
+    $('scanMint').value = mint;
+    const out = $('scanOut');
+    if (!CA_RE.test(mint)) {
+      out.replaceChildren(errorCard('That does not look like a Solana mint address (32–44 base58 characters).'));
+      return;
+    }
+    if (location.hash !== '#scan/' + mint) history.replaceState(null, '', '#scan/' + mint);
+    if (scanCtl) scanCtl.abort();
+    scanCtl = new AbortController();
+    const ctl = scanCtl;
+    const ld = loading('Scanning live market indexes…');
+    out.replaceChildren(ld.node);
+    $('scanBtn').disabled = true;
+    $('scanCancel').hidden = false;
+    try {
+      const data = await api('/api/scan/' + encodeURIComponent(mint), { method: 'POST', signal: ctl.signal });
+      renderScan(data);
+    } catch (e) {
+      out.replaceChildren(e.name === 'AbortError' ? el('p', { class: 'muted' }, 'Scan cancelled.') : errorCard(e.message));
+    } finally {
+      ld.stop();
+      if (scanCtl === ctl) {
+        $('scanBtn').disabled = false;
+        $('scanCancel').hidden = true;
+        scanCtl = null;
+      }
+    }
+  }
+  $('scanForm').addEventListener('submit', (e) => { e.preventDefault(); startScan($('scanMint').value); });
+  $('scanCancel').addEventListener('click', () => scanCtl && scanCtl.abort());
+
+  function renderScan(d) {
+    const out = $('scanOut');
+    const nodes = [el('div', { class: 'section-title' }, 'Target'), tokenCard(d.target || {})];
+
+    const matches = d.matches || [];
+    nodes.push(el('div', { class: 'section-title' },
+      matches.length ? `Ranked rivals (${matches.length})` : 'Ranked rivals'));
+    nodes.push(el('p', { class: 'hint' },
+      `Ran ${d.query_count ?? 0} searches and examined ${d.candidate_count ?? 0} candidates.`));
+
+    if (!matches.length) {
+      nodes.push(el('div', { class: 'card' }, el('div', { class: 'muted' },
+        'No rivals found in live indexed results. Brand-new or unindexed tokens may be missing.')));
+    }
+    matches.forEach((m, i) => {
+      const t = m.token || {};
+      nodes.push(el('div', { class: 'card' },
+        el('div', { class: 'match' },
+          scoreRing(m.relevance_score),
+          el('div', {},
+            el('div', { class: 'token-head' },
+              el('div', { class: 'token-name' }, el('span', { class: 'muted', style: 'font-weight:500;margin-right:6px' }, '#' + (i + 1)),
+                t.name || 'Unknown', el('span', { class: 'sym' }, '$' + (t.symbol || '?'))),
+              el('div', { class: 'stats', style: 'margin:0' },
+                usd(t.market_cap) ? el('div', { class: 'stat' }, el('span', { class: 'k' }, 'MC '), el('span', { class: 'v' }, usd(t.market_cap))) : null,
+                usd(t.liquidity) ? el('div', { class: 'stat' }, el('span', { class: 'k' }, 'Liq '), el('span', { class: 'v' }, usd(t.liquidity))) : null)),
+            el('div', { class: 'ca' }, el('code', { title: t.ca }, short(t.ca)), t.ca ? copyBtn(t.ca) : null,
+              t.ca ? el('button', { class: 'link', type: 'button', style: 'font-size:13px', onclick: () => startScan(t.ca) }, 'Scan this') : null),
+            evidenceChips(m.evidence),
+            t.description ? el('p', { class: 'desc muted', style: 'font-size:14px' }, clip(t.description, 280)) : null,
+            linksRow(t),
+          ))));
+    });
+
+    const hist = d.history_matches || [];
+    if (hist.length) {
+      nodes.push(el('div', { class: 'section-title' }, 'Also in your scan history'));
+      for (const h of hist) {
+        const t = h.token || {};
+        nodes.push(el('div', { class: 'card' },
+          el('div', { class: 'token-name', style: 'font-size:16px' }, t.name || 'Unknown', el('span', { class: 'sym' }, '$' + (t.symbol || '?'))),
+          el('div', { class: 'ca' }, el('code', { title: t.ca }, short(t.ca)), t.ca ? copyBtn(t.ca) : null,
+            t.ca ? el('button', { class: 'link', type: 'button', style: 'font-size:13px', onclick: () => startScan(t.ca) }, 'Scan this') : null),
+          evidenceChips(h.evidence)));
+      }
+    }
+    if (d.disclaimer) nodes.push(el('p', { class: 'disclaimer' }, d.disclaimer));
+    out.replaceChildren(...nodes);
+  }
+  function linksRow(t) {
+    const links = [extLink(t.pair_url, 'Chart'), ...Object.entries(t.socials || {}).map(([l, u]) => extLink(u, l))].filter(Boolean);
+    return links.length ? el('div', { class: 'links' }, links) : null;
+  }
+
+  // ---------- compare ----------
+  $('cmpForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const a = $('cmpA').value.trim(), b = $('cmpB').value.trim();
+    const out = $('cmpOut');
+    if (!CA_RE.test(a) || !CA_RE.test(b)) {
+      out.replaceChildren(errorCard('Both values must be Solana mint addresses (32–44 base58 characters).'));
+      return;
+    }
+    const ld = loading('Comparing…');
+    out.replaceChildren(ld.node);
+    $('cmpBtn').disabled = true;
+    try {
+      const d = await api('/api/compare', { method: 'POST', body: JSON.stringify({ token_a: a, token_b: b }) });
+      const ev = d.evidence || [];
+      out.replaceChildren(
+        el('div', { class: 'card' },
+          el('div', { class: 'verdict ' + (d.potential_overlap ? 'yes' : 'no') },
+            d.potential_overlap ? `Potential overlap — ${ev.length} signal${ev.length === 1 ? '' : 's'}` : 'No overlap signals found'),
+          ev.length ? evidenceChips(ev) : el('p', { class: 'muted', style: 'margin:6px 0 0' },
+            'Ticker, name, description and social links did not match. Narrative overlap is only checked in a full scan.')),
+        el('div', { class: 'pair', style: 'margin-top:16px' },
+          tokenCard(d.token_a || {}, { scanLink: true, descLen: 300 }),
+          tokenCard(d.token_b || {}, { scanLink: true, descLen: 300 })));
+    } catch (err) {
+      out.replaceChildren(errorCard(err.message));
+    } finally {
+      ld.stop();
+      $('cmpBtn').disabled = false;
+    }
+  });
+
+  // ---------- recent ----------
+  async function loadRecent() {
+    const out = $('recentOut');
+    const ld = loading('Loading…');
+    out.replaceChildren(ld.node);
+    try {
+      const d = await api('/api/recent?limit=100');
+      const items = d.items || [];
+      if (!items.length) {
+        out.replaceChildren(el('div', { class: 'empty' }, 'No scans yet.'));
+        return;
+      }
+      out.replaceChildren(el('div', { class: 'card', style: 'padding:4px 12px' },
+        el('table', {},
+          el('thead', {}, el('tr', {}, el('th', {}, 'Token'), el('th', { class: 'hide-sm' }, 'Mint'), el('th', {}, ''))),
+          el('tbody', {}, items.map(t => el('tr', {},
+            el('td', {}, el('div', { style: 'font-weight:600' }, t.name || 'Unknown'), el('div', { class: 'muted', style: 'font-size:13px' }, '$' + (t.symbol || '?'))),
+            el('td', { class: 'hide-sm ca-cell' }, el('code', {}, t.ca)),
+            el('td', { style: 'text-align:right;white-space:nowrap' },
+              el('button', { class: 'secondary small', type: 'button', onclick: () => startScan(t.ca) }, 'Scan'))))))));
+    } catch (e) {
+      out.replaceChildren(errorCard(e.message));
+    } finally {
+      ld.stop();
+    }
+  }
+  $('recentRefresh').addEventListener('click', loadRecent);
+
+  // ---------- tabs & routing ----------
+  function selectTab(name, push = true) {
+    for (const b of document.querySelectorAll('nav.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+    for (const s of document.querySelectorAll('[role=tabpanel]')) s.hidden = s.id !== 'tab-' + name;
+    if (push && !location.hash.startsWith('#' + name)) history.replaceState(null, '', '#' + name);
+    if (name === 'recent') loadRecent();
+  }
+  for (const b of document.querySelectorAll('nav.tabs button')) b.addEventListener('click', () => selectTab(b.dataset.tab));
+
+  function route() {
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h.startsWith('scan/')) startScan(h.slice(5));
+    else if (h === 'compare' || h === 'recent') selectTab(h, false);
+  }
+  window.addEventListener('hashchange', route);
+
+  checkHealth();
+  route();
+})();
+</script>
+</body>
+</html>
