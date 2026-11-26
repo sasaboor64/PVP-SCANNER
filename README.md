@@ -1,26 +1,23 @@
 # PvP Scanner
 
-Finds Solana tokens that share a ticker, name, links or narrative with a given mint.
+Finds Solana tokens that share a ticker, name, links or narrative with a given mint, and has Claude judge the closest ones.
 
-- `backend/` — FastAPI scanner service (see `backend/README.md`)
-- `docs/` — static web frontend (single `index.html`, no build step), served by GitHub Pages
+- `backend/`: FastAPI scanner service (see `backend/README.md`)
+- `docs/`: static frontend (a single `index.html`, no build step)
+- `deploy/`: server setup for AWS Lightsail with Caddy and DuckDNS (see `deploy/README.md`)
 
-## Running it
+## Production
 
-1. Start the backend on your machine:
-   ```bash
-   cd backend
-   python -m pip install -r requirements.txt
-   uvicorn app.main:app --host 127.0.0.1 --port 8000
-   ```
-2. Open the frontend, either the GitHub Pages URL or `docs/index.html` straight from disk.
-   It calls `http://127.0.0.1:8000` by default; change the API field in the header to point elsewhere.
+One server serves both the frontend and the API over HTTPS. Follow `deploy/README.md`.
 
-The page reads untrusted token metadata, so it only ever inserts it as text and only links `http(s)` URLs.
+## Local development
 
-## GitHub Pages
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-Settings → Pages → Source: "Deploy from a branch", choose the branch and the `/docs` folder.
+Open `docs/index.html` from disk. When the page isn't served by the scanner's own server, it calls `http://127.0.0.1:8000`; you can change this under **Server** in the header.
 
-The hosted page is https and the backend is local http. Chrome, Edge and Firefox allow calls to
-`127.0.0.1` from an https page (Chrome may ask permission to access the local network); Safari does not.
+Token metadata is untrusted, so the page only inserts it as text and only links `http(s)` URLs.

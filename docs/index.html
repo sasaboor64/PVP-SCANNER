@@ -80,7 +80,13 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.ok { background: var(--good); }
 .dot.err { background: var(--bad); }
-.conn input { width: 220px; }
+.conn details { position: relative; font-size: 13px; }
+.conn summary { cursor: pointer; color: var(--muted); }
+.server-row {
+  position: absolute; right: 0; top: 26px; z-index: 5; display: flex; gap: 6px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
+}
+.server-row input { width: 240px; }
 
 nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; }
 nav.tabs button {
@@ -137,7 +143,7 @@ button.small { font-size: 13px; padding: 5px 10px; font-weight: 500; }
 .score::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
 .score span { position: relative; font-size: 15px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.chip { background: var(--chip); color: var(--chip-text); border-radius: 999px; padding: 2px 10px; font-size: 13px; overflow-wrap: anywhere; }
+.chip { background: var(--chip); color: var(--chip-text); border-radius: 12px; padding: 2px 10px; font-size: 13px; overflow-wrap: anywhere; }
 .chip b { font-weight: 600; }
 
 .status { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: var(--muted); }
@@ -148,6 +154,12 @@ button.small { font-size: 13px; padding: 5px 10px; font-weight: 500; }
 .muted { color: var(--muted); }
 .disclaimer { font-size: 13px; color: var(--muted); margin-top: 16px; }
 
+.ai-box { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--surface-2); font-size: 14px; }
+.ai-box .ai-head { font-weight: 650; }
+.ai-box .ai-head.strong { color: var(--bad); }
+.ai-box .ai-head.possible { color: var(--warn); }
+.ai-box .ai-head.none { color: var(--good); }
+.ai-note { font-size: 13px; color: var(--muted); margin: 2px 0 0; }
 .verdict { font-weight: 650; }
 .verdict.yes { color: var(--warn); }
 .verdict.no { color: var(--good); }
@@ -165,8 +177,7 @@ td.ca-cell { word-break: break-all; }
 
 @media (max-width: 640px) {
   .pair { grid-template-columns: 1fr; }
-  .conn { width: 100%; flex-wrap: nowrap; }
-  .conn input { flex: 1; width: auto; }
+  .server-row input { width: 200px; }
   th.hide-sm, td.hide-sm { display: none; }
 }
 [hidden] { display: none !important; }
@@ -178,9 +189,14 @@ td.ca-cell { word-break: break-all; }
     <h1>PvP Scanner <span>· Solana narrative overlap</span></h1>
     <div class="conn">
       <span class="dot" id="apiDot" title="API status"></span>
-      <label for="apiBase" class="muted" style="font-size:13px">API</label>
-      <input type="text" id="apiBase" class="mono" spellcheck="false" autocomplete="off">
-      <button class="secondary small" id="apiCheck">Check</button>
+      <span id="aiBadge" class="muted" style="font-size:13px">Connecting…</span>
+      <details id="serverBox">
+        <summary>Server</summary>
+        <div class="server-row">
+          <input type="text" id="apiBase" class="mono" spellcheck="false" autocomplete="off" aria-label="API address">
+          <button class="secondary small" id="apiCheck">Check</button>
+        </div>
+      </details>
     </div>
   </header>
 
@@ -206,7 +222,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
       <button class="primary" id="scanBtn" type="submit">Scan</button>
       <button class="secondary" id="scanCancel" type="button" hidden>Cancel</button>
     </form>
-    <p class="hint">Searches live DexScreener results for tokens with the same ticker, a similar name, shared links or overlapping narrative. A scan can take a minute.</p>
+    <p class="hint">Searches live DexScreener results for tokens with the same ticker, a similar name, shared links or overlapping narrative, then has Claude judge the closest ones. A scan can take up to a minute.</p>
     <div id="scanOut"></div>
   </section>
 
@@ -238,7 +254,9 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
   'use strict';
 
   const CA_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-  const DEFAULT_API = 'http://127.0.0.1:8000';
+  // Served by our own server: talk to it. Opened from GitHub Pages or from disk: use a local backend.
+  const SAME_ORIGIN = /^https?:$/.test(location.protocol) && !/\.github\.io$/i.test(location.hostname);
+  const DEFAULT_API = SAME_ORIGIN ? location.origin : 'http://127.0.0.1:8000';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (best effort) ----------
@@ -325,14 +343,20 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
   function setConn(ok) {
     $('apiDot').className = 'dot ' + (ok ? 'ok' : 'err');
     $('apiDot').title = ok ? 'API reachable' : 'API unreachable';
-    $('setupHelp').hidden = ok;
+    $('setupHelp').hidden = ok || apiBase() !== 'http://127.0.0.1:8000';
+    if (!ok) $('aiBadge').textContent = 'Offline';
   }
-  async function checkHealth() {
-    store.set('pvp.api', apiBase());
-    try { await api('/health'); } catch {}
+  async function checkHealth(save) {
+    if (save === true) store.set('pvp.api', apiBase());
+    try {
+      const h = await api('/api/health');
+      const a = h && h.ai;
+      $('aiBadge').textContent = a && a.enabled ? 'AI review on' : 'AI review off';
+      $('aiBadge').title = a && a.enabled ? 'Closest matches are judged by ' + a.model : 'Keyword scoring only';
+    } catch {}
   }
-  $('apiCheck').addEventListener('click', checkHealth);
-  apiInput.addEventListener('change', checkHealth);
+  $('apiCheck').addEventListener('click', () => checkHealth(true));
+  apiInput.addEventListener('change', () => checkHealth(true));
 
   // ---------- rendering ----------
   function tokenCard(t, opts = {}) {
@@ -368,10 +392,33 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
   }
   function clip(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
 
-  function scoreRing(v) {
+  function scoreRing(v, m) {
     const p = Math.max(0, Math.min(100, Number(v) || 0));
     const c = p >= 60 ? 'var(--bad)' : p >= 30 ? 'var(--warn)' : 'var(--muted)';
-    return el('div', { class: 'score', style: `--p:${p};--c:${c}`, title: 'Narrative fit, 0–100' }, el('span', {}, String(Math.round(p))));
+    const title = m && m.ai
+      ? `Score ${Math.round(p)}/100: keyword score ${m.heuristic_score}, Claude fit ${m.ai.fit}`
+      : `Score ${Math.round(p)}/100 from keyword rules`;
+    return el('div', { class: 'score', style: `--p:${p};--c:${c}`, title }, el('span', {}, String(Math.round(p))));
+  }
+  const VERDICTS = {
+    strong_match: ['Strong match', 'strong'],
+    possible_match: ['Possible match', 'possible'],
+    not_a_match: ['Not a narrative match', 'none'],
+  };
+  function aiBox(m) {
+    if (!m.ai) return null;
+    const [label, cls] = VERDICTS[m.ai.classification] || ['Reviewed', 'possible'];
+    return el('div', { class: 'ai-box' },
+      el('div', { class: 'ai-head ' + cls }, 'Claude: ' + label, el('span', { class: 'muted', style: 'font-weight:500' }, ` · fit ${m.ai.fit}/100`)),
+      m.ai.reason ? el('div', {}, m.ai.reason) : null);
+  }
+  function aiStatusText(a) {
+    const s = a && a.status;
+    if (s === 'ok' || s === 'cached') return 'Closest matches reviewed by Claude.';
+    if (s === 'disabled') return 'AI review is off; scores come from keyword rules.';
+    if (s === 'daily_budget_reached') return "Today's AI review budget is used up; scores come from keyword rules.";
+    if (s === 'error' || s === 'refused') return 'AI review was unavailable for this scan; scores come from keyword rules.';
+    return '';
   }
   function evidenceChips(list) {
     return el('div', { class: 'chips' }, (list || []).map(e => {
@@ -437,7 +484,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
     nodes.push(el('div', { class: 'section-title' },
       matches.length ? `Ranked rivals (${matches.length})` : 'Ranked rivals'));
     nodes.push(el('p', { class: 'hint' },
-      `Ran ${d.query_count ?? 0} searches and examined ${d.candidate_count ?? 0} candidates.`));
+      `Ran ${d.query_count ?? 0} searches and examined ${d.candidate_count ?? 0} candidates. `, aiStatusText(d.ai)));
 
     if (!matches.length) {
       nodes.push(el('div', { class: 'card' }, el('div', { class: 'muted' },
@@ -447,7 +494,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
       const t = m.token || {};
       nodes.push(el('div', { class: 'card' },
         el('div', { class: 'match' },
-          scoreRing(m.relevance_score),
+          scoreRing(m.relevance_score, m),
           el('div', {},
             el('div', { class: 'token-head' },
               el('div', { class: 'token-name' }, el('span', { class: 'muted', style: 'font-weight:500;margin-right:6px' }, '#' + (i + 1)),
@@ -458,6 +505,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
             el('div', { class: 'ca' }, el('code', { title: t.ca }, short(t.ca)), t.ca ? copyBtn(t.ca) : null,
               t.ca ? el('button', { class: 'link', type: 'button', style: 'font-size:13px', onclick: () => startScan(t.ca) }, 'Scan this') : null),
             evidenceChips(m.evidence),
+            aiBox(m),
             t.description ? el('p', { class: 'desc muted', style: 'font-size:14px' }, clip(t.description, 280)) : null,
             linksRow(t),
           ))));

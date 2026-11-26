@@ -1,0 +1,24 @@
+[Unit]
+Description=PvP Scanner API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pvp
+Group=pvp
+WorkingDirectory=/opt/pvp-scanner/backend
+EnvironmentFile=/etc/pvp-scanner.env
+Environment=PVP_SCANNER_HOME=/var/lib/pvp-scanner
+# Keep a single worker: rate limits and the concurrent-scan cap live in process memory.
+ExecStart=/opt/pvp-scanner/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/pvp-scanner
+
+[Install]
+WantedBy=multi-user.target
